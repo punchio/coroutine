@@ -6,39 +6,72 @@ import (
 )
 
 type Coroutine struct {
-	sigMain chan<- interface{}
-	sigSelf chan interface{}
-	done    bool
-	err     error
+	sigSelf    chan struct{}
+	sigMain    chan struct{}
+	onComplete func(data interface{}, err error)
+	done       bool
+	result     interface{}
+	err        error
 }
 
-func NewCoroutine(f func(*Coroutine) error, sigMain chan<- interface{}) *Coroutine {
+func newCoroutine(exe func(*Coroutine) interface{}) *Coroutine {
 	t := &Coroutine{}
-	t.sigMain = sigMain
-	t.sigSelf = make(chan interface{})
+	t.sigMain = make(chan struct{})
+	t.sigSelf = make(chan struct{})
 	go func() {
+		defer func() {
+			t.handlePanic()
+			// fmt.Println("self unlock")
+			t.sigMain <- struct{}{}
+			if t.onComplete != nil {
+				t.onComplete(t.result, t.err)
+			}
+			t.done = true
+			// fmt.Println("finish!")
+		}()
+
+		// fmt.Println("self lock")
 		<-t.sigSelf
-		t.err = f(t)
-		t.done = true
-		t.yield()
-		// fmt.Println("TaskFinish")
+		t.result = exe(t)
 	}()
+	t.resume()
+	// fmt.Println("new exit")
 	return t
 }
 
-func (self *Coroutine) Done() (bool, error) {
-	return self.done, self.err
-}
-
+//只能在coroutine线程调用
 func (self *Coroutine) yield() {
-	self.sigMain <- nil
+	// fmt.Println("yield enter")
+	self.sigMain <- struct{}{}
 	<-self.sigSelf
+	// fmt.Println("yield exit")
 }
 
-func (self *Coroutine) Resume() {
-	// fmt.Println("Task Awake")
-	self.sigSelf <- nil
-	// fmt.Println("Task Awaked")
+//只能在coroutine管理线程调用
+func (self *Coroutine) resume() {
+	// fmt.Println("resume enter")
+	self.sigSelf <- struct{}{}
+	<-self.sigMain
+	// fmt.Println("resume exit")
+}
+
+func (self *Coroutine) handlePanic() {
+	e := recover()
+	if e != nil {
+		switch err := e.(type) {
+		case nil:
+			self.err = fmt.Errorf("panic recovery with nil error")
+		case error:
+			self.err = fmt.Errorf("panic recovery with error: %s", err.Error())
+		default:
+			self.err = fmt.Errorf("panic recovery with unknown error: %s", fmt.Sprint(err))
+		}
+	}
+}
+
+func (self *Coroutine) OnComplete(onComplete func(data interface{}, err error)) *Coroutine {
+	self.onComplete = onComplete
+	return self
 }
 
 func (self *Coroutine) Yield(c <-chan interface{}) interface{} {
@@ -78,10 +111,10 @@ func (self *Coroutine) YieldWithTimeOut(c <-chan interface{}, wait time.Duration
 func (self *Coroutine) Wait(d time.Duration) {
 	timer := time.After(d)
 	for {
-		// fmt.Println("Yield")
+		// fmt.Println("Wait")
 		select {
 		case <-timer:
-			// fmt.Println("receive data")
+			// fmt.Println("timer expired")
 			return
 		default:
 			// fmt.Println("no data, sleep")

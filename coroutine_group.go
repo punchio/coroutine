@@ -1,34 +1,31 @@
 package coroutine
 
-import "fmt"
-
 type CoroutineGroup struct {
-	sigMain    chan interface{}
 	coList     []*Coroutine
 	appendList []*Coroutine
 }
 
-func NewCoroutineGroup(sig chan interface{}) *CoroutineGroup {
+func NewCoroutineGroup() *CoroutineGroup {
 	cg := &CoroutineGroup{}
-	cg.sigMain = sig
 	return cg
 }
 
-func (self *CoroutineGroup) Add(f func(*Coroutine) error) {
-	co := NewCoroutine(f, self.sigMain)
+func (self *CoroutineGroup) Add(f func(*Coroutine) interface{}) *Coroutine {
+	co := newCoroutine(f)
 	self.appendList = append(self.appendList, co)
+	return co
 }
 
 func (self *CoroutineGroup) Run() {
 	for _, v := range self.coList {
-		v.Resume()
-		<-self.sigMain
+		v.resume()
+		// fmt.Println("run:", i)
 	}
 
 	for i := 0; i < len(self.coList); {
-		if done, err := self.coList[i].Done(); done {
+		if self.coList[i].done {
 			self.coList = append(self.coList[:i], self.coList[i+1:]...)
-			fmt.Println("Done task, err:", i, err, len(self.coList))
+			// fmt.Println("Done task, err:", i)
 		} else {
 			i++
 		}
