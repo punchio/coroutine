@@ -2,23 +2,18 @@ package main
 
 import (
 	"fmt"
-	coroutine "github.com/punchio/coroutine"
+	"github.com/punchio/coroutine"
 	"time"
 )
 
-func DoRedis(cmd string, d time.Duration) <-chan interface{} {
-	c := make(chan interface{})
-	go func() {
-		timer := time.After(d)
-		select {
-		case <-timer:
-			c <- cmd
-		}
-	}()
-	return c
+func DoRedis(cmd string, d time.Duration) func() interface{} {
+	return func() interface{} {
+		<-time.After(d)
+		return cmd + d.String()
+	}
 }
 
-func taskFunc(co *coroutine.Coroutine) error {
+func taskFunc(co *coroutine.Coroutine) interface{} {
 	fmt.Println("task start")
 	co.Wait(time.Second)
 	fmt.Println("yield wait 1 second")
@@ -59,8 +54,7 @@ func taskFunc(co *coroutine.Coroutine) error {
 }
 
 func main() {
-	sigMain := make(chan interface{})
-	cg := coroutine.NewCoroutineGroup(sigMain)
+	cg := coroutine.NewCoroutineGroup()
 	cg.Add(taskFunc)
 
 	for {

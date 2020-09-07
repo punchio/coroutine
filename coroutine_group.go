@@ -23,7 +23,11 @@ func (self *CoroutineGroup) Run() {
 	}
 
 	for i := 0; i < len(self.coList); {
-		if self.coList[i].done {
+		co := self.coList[i]
+		if co.done {
+			if co.onComplete != nil {
+				co.onComplete(co.result, co.err)
+			}
 			self.coList = append(self.coList[:i], self.coList[i+1:]...)
 			// fmt.Println("Done task, err:", i)
 		} else {
