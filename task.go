@@ -43,21 +43,15 @@ func newTask(exe func(*Task) interface{}) *Task {
 	return t
 }
 
-func async(f func() interface{}) <-chan interface{} {
-	c := make(chan interface{})
-	go func() {
-		c <- f()
-	}()
-	return c
-}
-
 //只能在coroutine线程调用
-func (self *Task) yield() {
+func (self *Task) yield(f func() interface{}) interface{} {
 	// fmt.Println("yield enter")
 	self.wgTask.Add(1)
 	self.wgCo.Done()
+	data := f()
 	self.wgTask.Wait()
 	// fmt.Println("yield exit")
+	return data
 }
 
 //只能在coroutine管理线程调用
@@ -89,23 +83,22 @@ func (self *Task) OnComplete(onComplete func(interface{}, error)) *Task {
 }
 
 func (self *Task) Yield(f func() interface{}) interface{} {
-	c := async(f)
-	for {
-		// fmt.Println("Yield")
-		select {
-		case data := <-c:
-			// fmt.Println("receive data")
-			return data
-		default:
-			// fmt.Println("no data, sleep")
-			self.yield()
-		}
-	}
+	return self.yield(f)
+}
+
+func (self *Task) Wait(d time.Duration) {
+	self.yield(func() interface{} {
+		<-time.After(d)
+	})
 }
 
 func (self *Task) YieldWithTimeOut(f func() interface{}, wait time.Duration) (interface{}, error) {
-	c := async(f)
 	timer := time.After(wait)
+	c := make(chan interface{})
+	go func() {
+		c <- f()
+	}()
+
 	for {
 		// fmt.Println("Yield")
 		select {
@@ -115,21 +108,6 @@ func (self *Task) YieldWithTimeOut(f func() interface{}, wait time.Duration) (in
 		case <-timer:
 			// fmt.Println("task timeout")
 			return nil, fmt.Errorf("task timeout")
-		default:
-			// fmt.Println("no data, sleep")
-			self.yield()
-		}
-	}
-}
-
-func (self *Task) Wait(d time.Duration) {
-	timer := time.After(d)
-	for {
-		// fmt.Println("Wait")
-		select {
-		case <-timer:
-			// fmt.Println("timer expired")
-			return
 		default:
 			// fmt.Println("no data, sleep")
 			self.yield()
