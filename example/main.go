@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/punchio/coroutine"
 	"time"
+
+	"github.com/punchio/coroutine"
 )
 
 func DoSomething(cmd string, d time.Duration) func() interface{} {
@@ -21,34 +22,18 @@ func taskFunc(co *coroutine.Task) interface{} {
 	data := co.Yield(DoSomething("wait 1 second", time.Second)).(string)
 	fmt.Println("yield return1:", data)
 
-	data = co.Yield(DoSomething("wait 2 second", time.Second*2)).(string)
-	fmt.Println("yield return2:", data)
-
-	data = co.Yield(DoSomething("wait 3 second", time.Second*3)).(string)
-	fmt.Println("yield return3:", data)
-
-	//always success
-	data2, err := co.YieldWithTimeOut(DoSomething("wait timeout 3 second", time.Second*3), time.Second*4)
-	if err != nil {
-		fmt.Println("yield return4 fail,err:", err, data2)
-	} else {
-		fmt.Println("yield return4:", data2.(string))
-	}
-
-	//maybe success,maybe fail
-	data2, err = co.YieldWithTimeOut(DoSomething("wait timeout 3 second", time.Second*3), time.Second*3)
-	if err != nil {
-		fmt.Println("yield return5 fail,err:", err, data2)
-	} else {
-		fmt.Println("yield return5:", data2.(string))
-	}
-
 	//always fail
-	data2, err = co.YieldWithTimeOut(DoSomething("wait timeout 3 second", time.Second*3), time.Second*2)
+	data2, err := co.YieldWithTimeOut(DoSomething("wait timeout 3 second", time.Second*3), time.Second*2)
 	if err != nil {
 		fmt.Println("yield return6 fail,err:", err, data2)
 	} else {
 		fmt.Println("yield return6:", data2.(string))
+	}
+
+	strs := []string{"a", "b", "c"}
+	for _, v := range strs {
+		data = co.Yield(DoSomething(v, time.Second)).(string)
+		fmt.Println("yield return1:", data)
 	}
 	return nil
 }
@@ -62,8 +47,8 @@ func main() {
 	for {
 		//执行主线程函数
 		// fmt.Println("main run")
-		//执行协程函数
 
+		//执行协程函数
 		cg.Run()
 		// fmt.Println("main run finish")
 		if cg.Len() == 0 {
