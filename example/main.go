@@ -2,18 +2,18 @@ package main
 
 import (
 	"fmt"
-	"github.com/punchio/coroutine"
+	"main/coroutine"
 	"time"
 )
 
 func DoRedis(cmd string, d time.Duration) func() interface{} {
 	return func() interface{} {
 		<-time.After(d)
-		return cmd + d.String()
+		return cmd + " " + d.String()
 	}
 }
 
-func taskFunc(co *coroutine.Coroutine) interface{} {
+func taskFunc(co *coroutine.Task) interface{} {
 	fmt.Println("task start")
 	co.Wait(time.Second)
 	fmt.Println("yield wait 1 second")
@@ -54,8 +54,10 @@ func taskFunc(co *coroutine.Coroutine) interface{} {
 }
 
 func main() {
-	cg := coroutine.NewCoroutineGroup()
-	cg.Add(taskFunc)
+	cg := coroutine.NewCoroutine()
+	cg.Add(taskFunc).OnComplete(func(data interface{}, err error) {
+		fmt.Println("OnComplete data:", data, "err:", err)
+	})
 
 	for {
 		//执行主线程函数
