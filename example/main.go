@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
-	"main/coroutine"
+	"github.com/punchio/coroutine"
 	"time"
 )
 
-func DoRedis(cmd string, d time.Duration) func() interface{} {
+func DoSomething(cmd string, d time.Duration) func() interface{} {
 	return func() interface{} {
 		<-time.After(d)
 		return cmd + " " + d.String()
@@ -18,17 +18,17 @@ func taskFunc(co *coroutine.Task) interface{} {
 	co.Wait(time.Second)
 	fmt.Println("yield wait 1 second")
 
-	data := co.Yield(DoRedis("wait 1 second", time.Second)).(string)
+	data := co.Yield(DoSomething("wait 1 second", time.Second)).(string)
 	fmt.Println("yield return1:", data)
 
-	data = co.Yield(DoRedis("wait 2 second", time.Second*2)).(string)
+	data = co.Yield(DoSomething("wait 2 second", time.Second*2)).(string)
 	fmt.Println("yield return2:", data)
 
-	data = co.Yield(DoRedis("wait 3 second", time.Second*3)).(string)
+	data = co.Yield(DoSomething("wait 3 second", time.Second*3)).(string)
 	fmt.Println("yield return3:", data)
 
 	//always success
-	data2, err := co.YieldWithTimeOut(DoRedis("wait timeout 3 second", time.Second*3), time.Second*4)
+	data2, err := co.YieldWithTimeOut(DoSomething("wait timeout 3 second", time.Second*3), time.Second*4)
 	if err != nil {
 		fmt.Println("yield return4 fail,err:", err, data2)
 	} else {
@@ -36,7 +36,7 @@ func taskFunc(co *coroutine.Task) interface{} {
 	}
 
 	//maybe success,maybe fail
-	data2, err = co.YieldWithTimeOut(DoRedis("wait timeout 3 second", time.Second*3), time.Second*3)
+	data2, err = co.YieldWithTimeOut(DoSomething("wait timeout 3 second", time.Second*3), time.Second*3)
 	if err != nil {
 		fmt.Println("yield return5 fail,err:", err, data2)
 	} else {
@@ -44,7 +44,7 @@ func taskFunc(co *coroutine.Task) interface{} {
 	}
 
 	//always fail
-	data2, err = co.YieldWithTimeOut(DoRedis("wait timeout 3 second", time.Second*3), time.Second*2)
+	data2, err = co.YieldWithTimeOut(DoSomething("wait timeout 3 second", time.Second*3), time.Second*2)
 	if err != nil {
 		fmt.Println("yield return6 fail,err:", err, data2)
 	} else {
