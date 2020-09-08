@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
 	"time"
@@ -45,6 +44,17 @@ func taskFunc(co *coroutine.Task) interface{} {
 	return nil
 }
 
+func test(task *coroutine.Task) interface{} {
+	_, _ = task.Yield(func() (interface{}, error) {
+		sum := 0
+		for i := 0; i < 1000000; i++ {
+			sum += i
+		}
+		return sum, nil
+	})
+	return nil
+}
+
 func main() {
 	go func() {
 		_ = http.ListenAndServe("127.0.0.1:8899", nil)
@@ -52,13 +62,8 @@ func main() {
 
 	printTime("start")
 	cg := coroutine.New()
-	for i := 0; i < 100000; i++ {
-		cg.Add(func(task *coroutine.Task) interface{} {
-			task.Wait(time.Duration(rand.Int63n(10000)) * time.Millisecond)
-			return nil
-		}).OnComplete(func(data interface{}, err error) {
-			// printTime("OnComplete data:", data, "err:", err)
-		})
+	for i := 0; i < 500000; i++ {
+		cg.Add(test)
 	}
 
 	printTime("init finish")
