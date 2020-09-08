@@ -33,11 +33,14 @@ func newTask(exe func(*Task) interface{}, ch chan<- *Task) *Task {
 		defer func() {
 			t.handlePanic()
 			// fmt.Println("self unlock")
+
 			//协程结束，释放控制
+			t.wgCo.Done()
+			t.done = true
+			//task控制权交还给主线程
 			t.readyChan <- t
 			// fmt.Println("task finish!")
-			t.done = true
-			t.wgCo.Done()
+
 			// fmt.Println("finish!")
 		}()
 
@@ -51,7 +54,7 @@ func newTask(exe func(*Task) interface{}, ch chan<- *Task) *Task {
 	return t
 }
 
-//只能在coroutine线程调用
+//只能在协程调用
 func (self *Task) yield(f TaskYieldFunction) (interface{}, error) {
 	// fmt.Println("yield enter")
 	self.wgTask.Add(1)
@@ -68,7 +71,7 @@ func (self *Task) yield(f TaskYieldFunction) (interface{}, error) {
 	return data, err
 }
 
-//只能在coroutine管理线程调用
+//只能在主线程调用
 func (self *Task) resume() {
 	// fmt.Println("resume enter")
 	self.wgCo.Add(1)
