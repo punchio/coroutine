@@ -1,45 +1,46 @@
 package coroutine
 
 type Coroutine struct {
-	taskList       []*Task
-	appendTaskList []*Task
+	readyChan    chan *Task
+	runningCount int
 }
 
 //创建一个协程运行管理
-func NewCoroutine() *Coroutine {
-	cg := &Coroutine{}
-	return cg
+func New() *Coroutine {
+	co := &Coroutine{}
+	co.readyChan = make(chan *Task, 10000)
+	return co
 }
 
 //添加协程
 func (self *Coroutine) Add(f func(*Task) interface{}) *Task {
-	co := newTask(f)
-	self.appendTaskList = append(self.appendTaskList, co)
+	co := newTask(f, self.readyChan)
+	self.runningCount++
 	return co
 }
 
 func (self *Coroutine) Run() {
-	for _, v := range self.taskList {
-		v.resume()
-		// fmt.Println("run:", i)
-	}
-
-	for i := 0; i < len(self.taskList); {
-		co := self.taskList[i]
-		if co.done {
-			if co.onComplete != nil {
-				co.onComplete(co.result, co.err)
+	count := 0
+	for {
+		select {
+		case task := <-self.readyChan:
+			if task.done {
+				// fmt.Println("coroutine done")
+				self.runningCount--
+				if task.onComplete != nil {
+					task.onComplete(task.result, task.err)
+				}
+				continue
 			}
-			self.taskList = append(self.taskList[:i], self.taskList[i+1:]...)
-			// fmt.Println("Done task, err:", i)
-		} else {
-			i++
+			// fmt.Println("coroutine resume")
+			task.resume()
+			count++
+		default:
+			return
 		}
 	}
-	self.taskList = append(self.taskList, self.appendTaskList...)
-	self.appendTaskList = nil
 }
 
 func (self *Coroutine) Len() int {
-	return len(self.appendTaskList) + len(self.taskList)
+	return self.runningCount
 }

@@ -6,13 +6,18 @@ import (
 	"time"
 )
 
+type TaskYieldFunction func() (interface{}, error)
+type TaskCompleteFunction func(interface{}, error)
+
 type Task struct {
 	//控制与主线程同步信号
 	wgCo   sync.WaitGroup
 	wgTask sync.WaitGroup
+	//执行完成进入就绪队列
+	readyChan chan<- *Task
 
 	//处理结束回调
-	onComplete func(data interface{}, err error)
+	onComplete TaskCompleteFunction
 
 	//完成结果
 	done   bool
@@ -20,15 +25,18 @@ type Task struct {
 	err    error
 }
 
-func newTask(exe func(*Task) interface{}) *Task {
+func newTask(exe func(*Task) interface{}, ch chan<- *Task) *Task {
 	t := &Task{}
 	t.wgTask.Add(1)
+	t.readyChan = ch
 	go func() {
 		defer func() {
 			t.handlePanic()
 			// fmt.Println("self unlock")
-			t.done = true
 			//协程结束，释放控制
+			t.readyChan <- t
+			// fmt.Println("task finish!")
+			t.done = true
 			t.wgCo.Done()
 			// fmt.Println("finish!")
 		}()
@@ -44,14 +52,20 @@ func newTask(exe func(*Task) interface{}) *Task {
 }
 
 //只能在coroutine线程调用
-func (self *Task) yield(f func() interface{}) interface{} {
+func (self *Task) yield(f TaskYieldFunction) (interface{}, error) {
 	// fmt.Println("yield enter")
 	self.wgTask.Add(1)
 	self.wgCo.Done()
-	data := f()
+	var data interface{}
+	var err error
+	if f != nil {
+		data, err = f()
+	}
+	// fmt.Println("yield finish")
+	self.readyChan <- self
 	self.wgTask.Wait()
 	// fmt.Println("yield exit")
-	return data
+	return data, err
 }
 
 //只能在coroutine管理线程调用
@@ -67,50 +81,49 @@ func (self *Task) handlePanic() {
 	e := recover()
 	if e != nil {
 		switch err := e.(type) {
-		case nil:
-			self.err = fmt.Errorf("panic recovery with nil error")
 		case error:
-			self.err = fmt.Errorf("panic recovery with error: %s", err.Error())
+			self.err = fmt.Errorf("task panic recovery with error: %s", err.Error())
 		default:
-			self.err = fmt.Errorf("panic recovery with unknown error: %s", fmt.Sprint(err))
+			self.err = fmt.Errorf("task panic recovery with unknown error: %s", fmt.Sprint(err))
 		}
 	}
 }
 
-func (self *Task) OnComplete(onComplete func(interface{}, error)) *Task {
+func (self *Task) OnComplete(onComplete TaskCompleteFunction) *Task {
 	self.onComplete = onComplete
 	return self
 }
 
-func (self *Task) Yield(f func() interface{}) interface{} {
+func (self *Task) Yield(f TaskYieldFunction) (interface{}, error) {
 	return self.yield(f)
 }
 
 func (self *Task) Wait(d time.Duration) {
-	self.yield(func() interface{} {
+	_, _ = self.yield(func() (interface{}, error) {
 		<-time.After(d)
+		return nil, nil
 	})
 }
 
-func (self *Task) YieldWithTimeOut(f func() interface{}, wait time.Duration) (interface{}, error) {
-	timer := time.After(wait)
-	c := make(chan interface{})
+func (self *Task) YieldWithTimeOut(f TaskYieldFunction, wait time.Duration) (interface{}, error) {
+	var data interface{}
+	var err error
+	c := make(chan struct{})
 	go func() {
-		c <- f()
+		data, err = f()
+		c <- struct{}{}
 	}()
 
-	for {
-		// fmt.Println("Yield")
+	return self.yield(func() (interface{}, error) {
 		select {
-		case data := <-c:
+		case data = <-c:
 			// fmt.Println("receive data")
-			return data, nil
-		case <-timer:
+		case <-time.After(wait):
 			// fmt.Println("task timeout")
-			return nil, fmt.Errorf("task timeout")
-		default:
-			// fmt.Println("no data, sleep")
-			self.yield()
+			err = fmt.Errorf("task timeout")
 		}
-	}
+
+		return data, err
+	})
+
 }
