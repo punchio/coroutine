@@ -1,13 +1,19 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"net/http"
-	_ "net/http/pprof"
+	"log"
+	"os"
+	"runtime"
+	"runtime/pprof"
 	"time"
 
 	"github.com/punchio/coroutine"
 )
+
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
+var memprofile = flag.String("memprofile", "", "write memory profile to `file`")
 
 func printTime(params ...interface{}) {
 	fmt.Println(time.Now().String(), params)
@@ -46,41 +52,63 @@ func taskFunc(co *coroutine.Task) interface{} {
 
 func test(task *coroutine.Task) interface{} {
 	_, _ = task.Yield(func() (interface{}, error) {
-		sum := 0
-		for i := 0; i < 1000000; i++ {
-			sum += i
-		}
-		return sum, nil
+		return nil, nil
 	})
-	return nil
+	sum := 0
+	for i := 0; i < 1000000; i++ {
+		sum += i
+	}
+	_, _ = task.Yield(func() (interface{}, error) {
+		return nil, nil
+	})
+	for i := 0; i < 1000000; i++ {
+		sum += i
+	}
+	return sum
 }
 
 func main() {
-	go func() {
-		_ = http.ListenAndServe("127.0.0.1:8899", nil)
-	}()
-
-	printTime("start")
-	cg := coroutine.New()
-	for i := 0; i < 500000; i++ {
-		cg.Add(test)
+	flag.Parse()
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal("could not create CPU profile: ", err)
+		}
+		defer f.Close() // error handling omitted for example
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("could not start CPU profile: ", err)
+		}
+		defer pprof.StopCPUProfile()
 	}
 
+	// ... rest of the program ...
+
+	printTime("start")
+	cg := coroutine.New(10000)
+	for i := 0; i < 5000; i++ {
+		cg.Add(test)
+	}
 	printTime("init finish")
 
 	for {
-		//执行主线程函数
-		// printTime("main run")
-
-		//执行协程函数
 		cg.Run()
 		// printTime("main run finish")
 		if cg.Len() == 0 {
 			// printTime("test finish")
 			break
 		}
-		<-time.After(time.Millisecond * 20)
+		// time.Sleep(time.Millisecond * 20)
 	}
-	printTime("exit")
-	<-time.After(10)
+
+	if *memprofile != "" {
+		f, err := os.Create(*memprofile)
+		if err != nil {
+			log.Fatal("could not create memory profile: ", err)
+		}
+		defer f.Close() // error handling omitted for example
+		runtime.GC()    // get up-to-date statistics
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.Fatal("could not write memory profile: ", err)
+		}
+	}
 }

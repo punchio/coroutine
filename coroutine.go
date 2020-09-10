@@ -6,9 +6,9 @@ type Coroutine struct {
 }
 
 //创建一个协程运行管理
-func New() *Coroutine {
+func New(chanCount int) *Coroutine {
 	co := &Coroutine{}
-	co.readyChan = make(chan *Task, 10000)
+	co.readyChan = make(chan *Task, chanCount)
 	return co
 }
 
@@ -20,7 +20,6 @@ func (self *Coroutine) Add(f func(*Task) interface{}) *Task {
 }
 
 func (self *Coroutine) Run() {
-	count := 0
 	for {
 		select {
 		case task := <-self.readyChan:
@@ -34,7 +33,6 @@ func (self *Coroutine) Run() {
 			}
 			// fmt.Println("coroutine resume")
 			task.resume()
-			count++
 		default:
 			return
 		}
