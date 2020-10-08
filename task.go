@@ -2,71 +2,61 @@ package coroutine
 
 import (
 	"fmt"
-	"sync"
 	"time"
 )
 
+type TaskEntry func(*Task) interface{}
 type TaskYieldFunction func() (interface{}, error)
-type TaskCompleteFunction func(interface{}, error)
+type TaskCompletion func(interface{}, error)
 
 type Task struct {
-	//控制与主线程同步信号
-	wgCo   sync.WaitGroup
-	wgTask sync.WaitGroup
-	//执行完成进入就绪队列
-	readyChan chan<- *Task
-
-	//处理结束回调
-	onComplete TaskCompleteFunction
+	//主控协程
+	co *Coroutine
+	//主线程与协程同步信号
+	signal chan struct{}
 
 	//完成结果
-	done   bool
-	result interface{}
-	err    error
+	onComplete TaskCompletion
+	done       bool
+	result     interface{}
+	err        error
 }
 
-func newTask(exe func(*Task) interface{}, ch chan<- *Task) *Task {
+//创建
+func newTask(co *Coroutine, completion TaskCompletion) *Task {
 	t := &Task{}
-	t.wgTask.Add(1)
-	t.readyChan = ch
-	go func() {
-		defer func() {
-			t.handlePanic()
-			// fmt.Println("self unlock")
-
-			//协程结束，释放控制
-			t.wgCo.Done()
-			t.done = true
-			//task控制权交还给主线程
-			t.readyChan <- t
-			// fmt.Println("task finish!")
-
-			// fmt.Println("finish!")
-		}()
-
-		// fmt.Println("self lock")
-		//暂停协程，等待主线程调用
-		t.wgTask.Wait()
-		t.result = exe(t)
-	}()
-	t.resume()
-	// fmt.Println("new exit")
+	t.co = co
+	t.signal = make(chan struct{})
+	t.onComplete = completion
 	return t
+}
+
+func (self *Task) finish() {
+	self.done = true
+	if self.onComplete != nil {
+		self.onComplete(self.result, self.err)
+	}
+	self.co.enqueueTask(self)
+	self.co.resume()
 }
 
 //只能在协程调用
 func (self *Task) yield(f TaskYieldFunction) (interface{}, error) {
-	// fmt.Println("yield enter")
-	self.wgTask.Add(1)
-	self.wgCo.Done()
-	var data interface{}
-	var err error
-	if f != nil {
-		data, err = f()
+	//f为空，直接返回
+	if f == nil {
+		return nil, nil
 	}
+	// fmt.Println("yield enter")
+
+	//交出主线程控制权
+	self.co.resume()
+	//执行阻塞操作
+	data, err := f()
 	// fmt.Println("yield finish")
-	self.readyChan <- self
-	self.wgTask.Wait()
+
+	//执行完成进入就绪队列，阻塞等待主线程唤醒
+	self.co.enqueueTask(self)
+	<-self.signal
 	// fmt.Println("yield exit")
 	return data, err
 }
@@ -74,9 +64,8 @@ func (self *Task) yield(f TaskYieldFunction) (interface{}, error) {
 //只能在主线程调用
 func (self *Task) resume() {
 	// fmt.Println("resume enter")
-	self.wgCo.Add(1)
-	self.wgTask.Done()
-	self.wgCo.Wait()
+	self.signal <- struct{}{}
+	self.co.yield()
 	// fmt.Println("resume exit")
 }
 
@@ -92,11 +81,6 @@ func (self *Task) handlePanic() {
 	}
 }
 
-func (self *Task) OnComplete(onComplete TaskCompleteFunction) *Task {
-	self.onComplete = onComplete
-	return self
-}
-
 func (self *Task) Yield(f TaskYieldFunction) (interface{}, error) {
 	return self.yield(f)
 }
@@ -109,6 +93,9 @@ func (self *Task) Wait(d time.Duration) {
 }
 
 func (self *Task) YieldWithTimeOut(f TaskYieldFunction, wait time.Duration) (interface{}, error) {
+	if f == nil {
+		return nil, nil
+	}
 	var data interface{}
 	var err error
 	c := make(chan struct{})
